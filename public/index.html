@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Panel</title>
+  <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Docker Panel</h1>
+    <span id="summary" class="summary"></span>
+    <input id="search" type="search" placeholder="Filtrar por nome, imagem ou projeto…" autocomplete="off">
+  </header>
+
+  <main id="projects" class="projects"></main>
+
+  <section id="terminals" class="terminals hidden">
+    <div class="term-bar">
+      <div id="tabs" class="tabs"></div>
+      <button id="term-toggle" class="icon" title="Minimizar/expandir">▾</button>
+    </div>
+    <div id="term-panes" class="term-panes"></div>
+  </section>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="/vendor/xterm/lib/xterm.js"></script>
+  <script src="/vendor/addon-fit/lib/addon-fit.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
