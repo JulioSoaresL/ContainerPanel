@@ -1,6 +1,7 @@
 // docker-panel — painel web local para gerenciar todos os containers Docker da máquina.
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const http = require('http');
 const { execFile } = require('child_process');
 const express = require('express');
@@ -11,6 +12,12 @@ const HOST = '127.0.0.1';
 const PORT = Number(process.env.PANEL_PORT) || 7777;
 const DATA_FILE = path.join(__dirname, 'data', 'projects.json');
 const STANDALONE = '__standalone__';
+const IGNORED = '__ignored__';   // projetos que o usuário removeu da lista
+const SCAN_DIRS = (process.env.PANEL_SCAN_DIRS || os.homedir()).split(':').filter(Boolean);
+const SCAN_DEPTH = 4;
+const SCAN_TTL = 60 * 1000;
+const COMPOSE_NAMES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+const SKIP_DIRS = new Set(['node_modules', 'vendor']);
 
 const docker = new Docker();
 const app = express();
@@ -37,6 +44,43 @@ function saveKnown(known) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(known, null, 2));
 }
 
+// --- descoberta de arquivos compose no disco ----------------------------------
+// Projetos derrubados com `compose down` não têm containers, então só dá para
+// encontrá-los pelo arquivo compose.
+function composeProjectName(file, dir) {
+  try {
+    const m = fs.readFileSync(file, 'utf8').match(/^name:\s*["']?([^"'\s#]+)/m);
+    if (m) return m[1];
+  } catch {}
+  return path.basename(dir).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
+
+function scanComposeFiles() {
+  const found = {};
+  const walk = (dir, depth) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    const files = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
+    const file = COMPOSE_NAMES.find((n) => files.has(n));
+    if (file) {
+      const name = composeProjectName(path.join(dir, file), dir);
+      if (name && !found[name]) found[name] = { configFiles: [path.join(dir, file)], workingDir: dir };
+    }
+    if (depth >= SCAN_DEPTH) return;
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith('.') && !SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  for (const root of SCAN_DIRS) walk(path.resolve(root), 0);
+  return found;
+}
+
+let scanCache = { at: 0, projects: {} };
+function scannedProjects() {
+  if (Date.now() - scanCache.at > SCAN_TTL) scanCache = { at: Date.now(), projects: scanComposeFiles() };
+  return scanCache.projects;
+}
+
 function containerInfo(c) {
   const ports = [];
   const seen = new Set();
@@ -60,6 +104,8 @@ function containerInfo(c) {
 async function listProjects() {
   const containers = await docker.listContainers({ all: true });
   const known = loadKnown();
+  const ignored = new Set(known[IGNORED] || []);
+  delete known[IGNORED];
   let changed = false;
   const groups = {};
 
@@ -78,9 +124,15 @@ async function listProjects() {
         known[name] = entry;
         changed = true;
       }
+      if (ignored.delete(name)) changed = true;
     }
   }
-  if (changed) saveKnown(known);
+  for (const [name, entry] of Object.entries(scannedProjects())) {
+    if (known[name] || ignored.has(name)) continue;
+    known[name] = entry;
+    changed = true;
+  }
+  if (changed) saveKnown({ ...known, ...(ignored.size ? { [IGNORED]: [...ignored] } : {}) });
 
   const names = new Set([...Object.keys(groups), ...Object.keys(known)]);
   names.delete(STANDALONE);
@@ -179,7 +231,9 @@ app.post('/api/projects/:name/:action', wrap(async (req) => {
 
 app.delete('/api/projects/:name', wrap(async (req) => {
   const known = loadKnown();
-  delete known[req.params.name];
+  const name = req.params.name;
+  delete known[name];
+  known[IGNORED] = [...new Set([...(known[IGNORED] || []), name])];
   saveKnown(known);
   return { ok: true };
 }));
