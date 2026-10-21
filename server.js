@@ -81,7 +81,75 @@ function scannedProjects() {
   return scanCache.projects;
 }
 
-function containerInfo(c) {
+// --- projetos montados dentro dos containers ---------------------------------
+const PROJECT_MARKERS = ['.git', 'composer.json', 'package.json', 'artisan', 'go.mod', 'pyproject.toml', 'requirements.txt', 'Gemfile'];
+const NGINX_CONF_DIRS = ['/etc/nginx/conf.d', '/etc/nginx/sites-enabled'];
+
+function isProjectDir(dir) {
+  try { return fs.statSync(dir).isDirectory() && PROJECT_MARKERS.some((m) => fs.existsSync(path.join(dir, m))); } catch { return false; }
+}
+
+// Traduz um caminho de dentro do container para o host, pelos bind mounts.
+function toHostPath(mounts, p) {
+  const binds = (mounts || []).filter((m) => m.Type === 'bind').sort((a, b) => b.Destination.length - a.Destination.length);
+  const m = binds.find((m) => p === m.Destination || p.startsWith(`${m.Destination}/`));
+  return m ? m.Source + p.slice(m.Destination.length) : null;
+}
+
+// Lê os server blocks dos nginx rodando: server_name + porta publicada -> root/upstream.
+function nginxRoutes(containers) {
+  const routes = [];
+  for (const c of containers) {
+    if (c.State !== 'running' || !/nginx/.test(c.Image)) continue;
+    const files = [];
+    for (const m of c.Mounts || []) {
+      if (m.Type !== 'bind' || !NGINX_CONF_DIRS.some((d) => m.Destination === d || m.Destination.startsWith(`${d}/`))) continue;
+      try {
+        if (fs.statSync(m.Source).isDirectory()) {
+          for (const f of fs.readdirSync(m.Source)) {
+            if (f.endsWith('.conf') || m.Destination.includes('sites-enabled')) files.push(path.join(m.Source, f));
+          }
+        } else files.push(m.Source);
+      } catch {}
+    }
+    for (const file of files) {
+      let text;
+      try { text = fs.readFileSync(file, 'utf8').replace(/#.*$/gm, ''); } catch { continue; }
+      for (const block of text.split(/\bserver\s*\{/).slice(1)) {
+        const get = (re) => block.match(re)?.[1];
+        const listen = Number(get(/\blisten\s+(?:[^\s;]*:)?(\d+)/) || 80);
+        const pub = (c.Ports || []).find((p) => p.PrivatePort === listen && p.PublicPort)?.PublicPort;
+        const serverName = get(/\bserver_name\s+([^\s;]+)/);
+        if (!pub || !serverName || serverName === '_') continue;
+        const root = get(/\broot\s+([^\s;]+)/);
+        routes.push({
+          url: `http://${serverName}${pub === 80 ? '' : `:${pub}`}`,
+          root: root ? toHostPath(c.Mounts, root) : null,
+          upstream: get(/\b(?:fastcgi_pass|proxy_pass)\s+(?:https?:\/\/)?([^\s:;/]+)/),
+        });
+      }
+    }
+  }
+  return routes;
+}
+
+function containerApps(c, routes) {
+  if (c.State !== 'running') return [];
+  const names = new Set([c.Labels?.['com.docker.compose.service'], ...(c.Names || []).map((n) => n.replace(/^\//, ''))].filter(Boolean));
+  const ports = (c.Ports || []).map((p) => p.PublicPort).filter(Boolean);
+  const fallback = ports.length ? `http://localhost:${Math.min(...ports)}` : null;
+  const apps = [];
+  for (const m of c.Mounts || []) {
+    if (m.Type !== 'bind' || !isProjectDir(m.Source)) continue;
+    const inside = routes.filter((r) => r.root && (r.root === m.Source || r.root.startsWith(`${m.Source}/`)));
+    const route = inside.find((r) => names.has(r.upstream)) || inside[0]
+      || routes.find((r) => !r.root && names.has(r.upstream));
+    apps.push({ name: path.basename(m.Destination), path: m.Destination, url: route?.url || fallback });
+  }
+  return apps.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function containerInfo(c, routes) {
   const ports = [];
   const seen = new Set();
   for (const p of c.Ports || []) {
@@ -98,6 +166,7 @@ function containerInfo(c) {
     state: c.State,
     status: c.Status,
     ports,
+    apps: containerApps(c, routes),
   };
 }
 
@@ -108,12 +177,13 @@ async function listProjects() {
   delete known[IGNORED];
   let changed = false;
   const groups = {};
+  const routes = nginxRoutes(containers);
 
   for (const c of containers) {
     const labels = c.Labels || {};
     const name = labels['com.docker.compose.project'] || STANDALONE;
     groups[name] ??= [];
-    groups[name].push(containerInfo(c));
+    groups[name].push(containerInfo(c, routes));
 
     if (name !== STANDALONE && labels['com.docker.compose.project.config_files']) {
       const entry = {
@@ -285,10 +355,12 @@ async function openShell(ws, id, params) {
   });
   ws.on('close', () => stream?.end());
 
+  const cwd = params.get('cwd');
   try {
     exec = await docker.getContainer(id).exec({
       Cmd: ['sh', '-c', 'if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi'],
       Env: ['TERM=xterm-256color'],
+      ...(cwd && /^\/[^\0]*$/.test(cwd) ? { WorkingDir: cwd } : {}),
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,

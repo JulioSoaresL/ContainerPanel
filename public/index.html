@@ -9,12 +9,17 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Docker Panel</h1>
-    <span id="summary" class="summary"></span>
-    <input id="search" type="search" placeholder="Filtrar por nome, imagem ou projeto…" autocomplete="off">
+    <div class="wrap topbar-inner">
+      <h1>Docker Panel</h1>
+      <div id="summary" class="summary" aria-live="polite"></div>
+      <label class="search">
+        <span class="kbd" aria-hidden="true">/</span>
+        <input id="search" type="search" placeholder="Filtrar por nome, imagem ou projeto…" autocomplete="off" aria-label="Filtrar containers">
+      </label>
+    </div>
   </header>
 
-  <main id="projects" class="projects"></main>
+  <main id="projects" class="projects wrap"></main>
 
   <section id="terminals" class="terminals hidden">
     <div class="term-bar">

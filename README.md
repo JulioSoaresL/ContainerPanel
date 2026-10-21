@@ -8,6 +8,8 @@ Painel web local para gerenciar **todos** os containers Docker da máquina — d
 - **Iniciar / Parar / Reiniciar** um container
 - **Terminal** (bash, ou sh se não houver bash) em qualquer container rodando, em abas
 - Portas publicadas viram links `localhost:PORTA`
+- Projetos montados em cada container rodando, com o link pelo nginx (ou a porta do
+  container) e um **Terminal** que já abre na pasta do projeto
 
 ## Uso
 

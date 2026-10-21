@@ -5,8 +5,9 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   projects: [],
   filter: '',
-  busy: new Set(),            // chaves de ações em andamento ("p:nome" / "c:id")
+  busy: new Map(),            // ações em andamento: "p:nome" / "c:id" -> ação
   collapsed: new Set(JSON.parse(safeGet('collapsed') || '[]')),
+  appsOpen: new Set(JSON.parse(safeGet('appsOpen') || '[]')),   // nomes de containers com a lista de projetos aberta
   terms: new Map(),           // id da aba -> { term, fit, ws, tab, pane }
   activeTerm: null,
 };
@@ -31,13 +32,13 @@ async function refresh() {
     state.projects = await api('GET', '/api/projects');
     render();
   } catch (e) {
-    $('#summary').textContent = `Erro ao falar com o Docker: ${e.message}`;
+    $('#summary').innerHTML = `<span class="stat error">Erro ao falar com o Docker: ${esc(e.message)}</span>`;
   }
 }
 
-async function runAction(key, label, fn) {
+async function runAction(key, action, label, fn) {
   if (state.busy.has(key)) return;
-  state.busy.add(key);
+  state.busy.set(key, action);
   render();
   const toast = showToast(`${label}…`, 'info', 0);
   try {
@@ -54,12 +55,12 @@ async function runAction(key, label, fn) {
 function projectAction(name, action) {
   if (action === 'down' && !confirm(`Derrubar o projeto "${name}"?\n\nOs containers serão removidos (volumes são mantidos).`)) return;
   const labels = { up: 'Subindo', stop: 'Parando', down: 'Derrubando', restart: 'Reiniciando' };
-  runAction(`p:${name}`, `${labels[action]} ${name}`, () => api('POST', `/api/projects/${encodeURIComponent(name)}/${action}`));
+  runAction(`p:${name}`, action, `${labels[action]} ${name}`, () => api('POST', `/api/projects/${encodeURIComponent(name)}/${action}`));
 }
 
 function containerAction(id, name, action) {
   const labels = { start: 'Iniciando', stop: 'Parando', restart: 'Reiniciando' };
-  runAction(`c:${id}`, `${labels[action]} ${name}`, () => api('POST', `/api/containers/${id}/${action}`));
+  runAction(`c:${id}`, action, `${labels[action]} ${name}`, () => api('POST', `/api/containers/${id}/${action}`));
 }
 
 async function forgetProject(name) {
@@ -68,11 +69,54 @@ async function forgetProject(name) {
   refresh();
 }
 
+// --- formatação --------------------------------------------------------------
+const UNITS = { second: 's', minute: 'min', hour: 'h', day: ['dia', 'dias'], week: ['sem', 'sem'], month: ['mês', 'meses'], year: ['ano', 'anos'] };
+
+// "36 minutes" / "About an hour" / "Less than a second" -> "36 min" / "1 h" / "<1 s"
+function durPt(s) {
+  s = s.replace(/less than a second/i, '<1 second').replace(/^(about )?an? /i, '1 ');
+  return s.replace(/(<1|\d+) (second|minute|hour|day|week|month|year)s?/i, (_, n, u) => {
+    const unit = UNITS[u.toLowerCase()];
+    return `${n} ${Array.isArray(unit) ? unit[n === '1' ? 0 : 1] : unit}`;
+  });
+}
+
+// Status do Docker ("Up 2 hours (healthy)", "Exited (1) 3 days ago"...) -> texto curto + selos.
+function fmtStatus(c) {
+  const s = c.status || '';
+  const health = s.match(/\((healthy|unhealthy|health: starting)\)/i)?.[1].toLowerCase();
+  let text = s;
+  let exit = null;
+  let m;
+  if ((m = s.match(/^Up (.+?)(?: \(.*\))?$/))) text = `há ${durPt(m[1])}`;
+  else if ((m = s.match(/^Exited \((\d+)\) (.+) ago$/))) { text = `parado há ${durPt(m[2])}`; exit = m[1] !== '0' ? m[1] : null; }
+  else if (/^Created/.test(s)) text = 'criado';
+  else if (/^Restarting/.test(s)) text = 'reiniciando';
+  else if (/Paused/.test(s)) text = 'pausado';
+  const badges = [
+    health === 'healthy' ? '<span class="badge ok">healthy</span>' : '',
+    health === 'unhealthy' ? '<span class="badge danger">unhealthy</span>' : '',
+    health === 'health: starting' ? '<span class="badge warn">iniciando</span>' : '',
+    exit ? `<span class="badge danger" title="código de saída">exit ${esc(exit)}</span>` : '',
+  ].join('');
+  return `<span class="c-status" title="${esc(s)}">${esc(text)}${badges}</span>`;
+}
+
+const tildify = (p) => (p || '').replace(/^\/home\/[^/]+(?=\/|$)/, '~');
+const STATE_LABEL = { running: 'rodando', partial: 'parcial', stopped: 'parado', restarting: 'reiniciando' };
+
+function btn(cls, attrs, label, busyAction, action, extra = '') {
+  const spin = busyAction === action ? ' spinning' : '';
+  return `<button class="btn ${cls}${spin}" ${attrs} ${extra}>${label}</button>`;
+}
+
 // --- render ------------------------------------------------------------------
+const has = (s) => String(s ?? '').toLowerCase().includes(state.filter);
+
 function matches(project, c) {
   if (!state.filter) return true;
   const hay = `${project.standalone ? 'avulsos standalone' : project.name} ${c?.name ?? ''} ${c?.image ?? ''} ${c?.service ?? ''}`.toLowerCase();
-  return hay.includes(state.filter);
+  return hay.includes(state.filter) || !!c?.apps?.some((a) => has(a.name));
 }
 
 function projectStatus(p) {
@@ -84,7 +128,11 @@ function projectStatus(p) {
 function render() {
   const total = state.projects.reduce((n, p) => n + p.containers.length, 0);
   const running = state.projects.reduce((n, p) => n + p.running, 0);
-  $('#summary').textContent = `${running} rodando · ${total} containers · ${state.projects.filter((p) => !p.standalone).length} projetos`;
+  const projects = state.projects.filter((p) => !p.standalone).length;
+  $('#summary').innerHTML = `
+    <span class="stat"><span class="dot running"></span><b>${running}</b> rodando</span>
+    <span class="stat"><span class="dot stopped"></span><b>${total - running}</b> parados</span>
+    <span class="stat"><b>${projects}</b> projetos</span>`;
 
   const html = state.projects.map((p) => {
     const containers = p.containers.filter((c) => matches(p, c));
@@ -94,40 +142,58 @@ function render() {
     return renderProject(p, shown);
   }).join('');
 
-  $('#projects').innerHTML = html || '<p class="empty">Nenhum container encontrado.</p>';
+  // O refresh a cada 3s recria o HTML; devolve o foco ao mesmo controle (navegação por teclado).
+  const focused = focusKey(document.activeElement);
+  $('#projects').innerHTML = html || (state.filter
+    ? `<div class="empty"><p>Nada encontrado para “${esc(state.filter)}”.</p><button class="btn" data-clear="1">Limpar filtro</button></div>`
+    : '<div class="empty"><p>Nenhum container encontrado.</p></div>');
+  if (focused) [...$('#projects').querySelectorAll('button, a')].find((el) => focusKey(el) === focused)?.focus();
+}
+
+function focusKey(el) {
+  if (!el || !$('#projects').contains(el)) return null;
+  return `${el.tagName}|${el.getAttribute('href') || ''}|${JSON.stringify({ ...el.dataset })}`;
 }
 
 function renderProject(p, containers) {
   const status = projectStatus(p);
-  const busy = state.busy.has(`p:${p.name}`);
+  const busyAction = state.busy.get(`p:${p.name}`);
+  const busy = !!busyAction;
   const collapsed = state.collapsed.has(p.name) && !state.filter;
   const title = p.standalone ? 'Avulsos' : p.name;
-  const sub = p.standalone ? 'containers fora de docker compose' : (p.workingDir || '');
+  const sub = p.standalone ? 'containers fora de docker compose' : tildify(p.workingDir);
   // Sem compose no disco: subir/parar/reiniciar ainda funcionam direto nos containers, derrubar não.
   const dis = busy || (!p.composeAvailable && p.containers.length === 0) ? 'disabled' : '';
   const disDown = busy || !p.composeAvailable ? 'disabled' : '';
+  const attrs = (a) => `data-p="${esc(p.name)}" data-a="${a}"`;
+  const allUp = p.containers.length > 0 && p.running === p.containers.length;
   const actions = p.standalone ? '' : `
     <div class="actions">
-      ${!p.composeAvailable ? '<span class="warn" title="O arquivo docker-compose não existe mais no disco. Subir/Parar/Reiniciar agem direto nos containers; Derrubar fica indisponível.">compose ausente</span>' : ''}
-      <button class="btn up" ${dis} data-p="${esc(p.name)}" data-a="up">▲ Subir</button>
-      <button class="btn" ${dis || (p.running ? '' : 'disabled')} data-p="${esc(p.name)}" data-a="restart">↻ Reiniciar</button>
-      <button class="btn" ${dis || (p.running ? '' : 'disabled')} data-p="${esc(p.name)}" data-a="stop">■ Parar</button>
-      <button class="btn danger" ${disDown || (p.containers.length ? '' : 'disabled')} data-p="${esc(p.name)}" data-a="down">▼ Derrubar</button>
-      ${p.containers.length === 0 ? `<button class="btn ghost" data-forget="${esc(p.name)}" title="Remover da lista">✕</button>` : ''}
+      ${!p.composeAvailable ? '<span class="badge warn" title="O arquivo docker-compose não existe mais no disco. Subir/Parar/Reiniciar agem direto nos containers; Derrubar fica indisponível.">compose ausente</span>' : ''}
+      ${btn(allUp ? 'ghost up' : 'primary', attrs('up'), '▲ Subir', busyAction, 'up', dis)}
+      ${btn('', attrs('restart'), '↻ Reiniciar', busyAction, 'restart', dis || (p.running ? '' : 'disabled'))}
+      ${btn('', attrs('stop'), '■ Parar', busyAction, 'stop', dis || (p.running ? '' : 'disabled'))}
+      <span class="sep"></span>
+      ${btn('danger', attrs('down'), '▼ Derrubar', busyAction, 'down', disDown || (p.containers.length ? '' : 'disabled'))}
+      ${p.containers.length === 0 ? `<button class="btn ghost icon-btn" data-forget="${esc(p.name)}" title="Remover da lista" aria-label="Remover ${esc(p.name)} da lista">✕</button>` : ''}
     </div>`;
 
   const rows = containers.length
     ? containers.map(renderContainer).join('')
-    : '<div class="row muted">Sem containers — use "Subir" para criar.</div>';
+    : '<div class="row-empty">Sem containers — use “Subir” para criar.</div>';
 
   return `
     <article class="card ${busy ? 'busy' : ''}">
       <header class="card-head">
-        <button class="collapse" data-collapse="${esc(p.name)}" title="Recolher/expandir">${collapsed ? '▸' : '▾'}</button>
-        <span class="dot ${status}"></span>
+        <button class="collapse" data-collapse="${esc(p.name)}" aria-expanded="${!collapsed}" title="Recolher/expandir">${collapsed ? '▸' : '▾'}</button>
         <div class="title">
-          <h2>${esc(title)}</h2>
-          <span class="sub">${esc(sub)} · ${p.running}/${p.containers.length} rodando</span>
+          <div class="title-line">
+            <h2>${esc(title)}</h2>
+            <span class="badge ${status === 'running' ? 'ok' : status === 'partial' ? 'warn' : ''}" title="${STATE_LABEL[status]}">
+              <span class="dot ${status}"></span>${p.running}/${p.containers.length} rodando
+            </span>
+          </div>
+          <span class="sub" title="${esc(p.workingDir || '')}">${esc(sub)}</span>
         </div>
         ${actions}
       </header>
@@ -137,27 +203,61 @@ function renderProject(p, containers) {
 
 function renderContainer(c) {
   const running = c.state === 'running';
-  const busy = state.busy.has(`c:${c.id}`);
-  const dis = busy ? 'disabled' : '';
+  const st = running ? 'running' : c.state === 'restarting' ? 'restarting' : 'stopped';
+  const busyAction = state.busy.get(`c:${c.id}`);
+  const dis = busyAction ? 'disabled' : '';
+  const attrs = (a, label) => `data-c="${c.id}" data-n="${esc(c.name)}" data-a="${a}" title="${label}" aria-label="${label} ${esc(c.name)}"`;
   const ports = c.ports.map((p) =>
-    `<a href="http://localhost:${p.public}" target="_blank" rel="noopener" title="${p.private}/${p.type}">:${p.public}</a>`).join(' ');
+    `<a class="chip port" href="http://localhost:${p.public}" target="_blank" rel="noopener" title="${p.private}/${p.type}">:${p.public}</a>`).join('');
+  const { apps, open } = visibleApps(c);
+  const appsChip = running && c.apps?.length
+    ? `<button class="chip apps-toggle ${open ? 'open' : ''}" data-apps="${esc(c.name)}" aria-expanded="${open}">${c.apps.length} projeto${c.apps.length > 1 ? 's' : ''} <span class="caret">${open ? '▾' : '▸'}</span></button>`
+    : '';
   return `
-    <div class="row ${busy ? 'busy' : ''}">
-      <span class="dot ${running ? 'running' : c.state === 'restarting' ? 'partial' : 'stopped'}"></span>
+    <div class="row ${busyAction ? 'busy' : ''}">
+      <span class="dot ${st === 'restarting' ? 'partial' : st}" title="${STATE_LABEL[st]}" role="img" aria-label="${STATE_LABEL[st]}"></span>
       <div class="c-main">
         <span class="c-name">${esc(c.name)}</span>
-        <span class="c-image">${esc(c.image)}</span>
+        <span class="c-image" title="${esc(c.image)}">${esc(c.image)}</span>
       </div>
-      <span class="c-status">${esc(c.status)}</span>
+      ${fmtStatus(c)}
       <span class="c-ports">${ports}</span>
+      <span class="c-apps">${appsChip}</span>
       <div class="actions">
-        ${running
-          ? `<button class="btn" ${dis} data-c="${c.id}" data-n="${esc(c.name)}" data-a="restart" title="Reiniciar">↻</button>
-             <button class="btn" ${dis} data-c="${c.id}" data-n="${esc(c.name)}" data-a="stop" title="Parar">■</button>`
-          : `<button class="btn up" ${dis} data-c="${c.id}" data-n="${esc(c.name)}" data-a="start" title="Iniciar">▶</button>`}
+        <div class="seg">
+          ${running
+            ? `${btn('', attrs('restart', 'Reiniciar'), '↻', busyAction, 'restart', dis)}${btn('', attrs('stop', 'Parar'), '■', busyAction, 'stop', dis)}`
+            : btn('up', attrs('start', 'Iniciar'), '▶', busyAction, 'start', dis)}
+        </div>
         <button class="btn term" ${running ? '' : 'disabled'} data-term="${c.id}" data-n="${esc(c.name)}">&gt;_ Terminal</button>
       </div>
-    </div>`;
+    </div>${open ? renderApps(c, apps) : ''}`;
+}
+
+// Com filtro casando projetos internos, a lista abre sozinha mostrando só eles.
+function visibleApps(c) {
+  if (c.state !== 'running' || !c.apps?.length) return { apps: [], open: false };
+  if (state.filter) {
+    const hit = c.apps.filter((a) => has(a.name));
+    if (hit.length) return { apps: hit, open: true };
+  }
+  return { apps: c.apps, open: state.appsOpen.has(c.name) };
+}
+
+function renderApps(c, apps) {
+  const rows = apps.map((a) => {
+    const link = a.url
+      ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url.replace(/^https?:\/\//, ''))} <span aria-hidden="true">↗</span></a>`
+      : '<span class="muted">sem porta</span>';
+    const pathHint = a.path.endsWith(`/${a.name}`) ? '' : `<span class="app-path">${esc(a.path)}</span>`;
+    return `
+      <div class="app-row">
+        <span class="app-name" title="${esc(a.path)}">${esc(a.name)}${pathHint}</span>
+        <span class="app-url">${link}</span>
+        <button class="btn term" data-term="${c.id}" data-n="${esc(`${c.name}:${a.name}`)}" data-cwd="${esc(a.path)}" title="Terminal em ${esc(a.path)}">&gt;_ Terminal</button>
+      </div>`;
+  }).join('');
+  return `<div class="apps">${rows}</div>`;
 }
 
 // --- eventos -----------------------------------------------------------------
@@ -169,8 +269,14 @@ $('#projects').addEventListener('click', (e) => {
     state.collapsed.has(n) ? state.collapsed.delete(n) : state.collapsed.add(n);
     safeSet('collapsed', JSON.stringify([...state.collapsed]));
     render();
-  } else if (b.dataset.forget) forgetProject(b.dataset.forget);
-  else if (b.dataset.term) openTerminal(b.dataset.term, b.dataset.n);
+  } else if (b.dataset.apps) {
+    const n = b.dataset.apps;
+    state.appsOpen.has(n) ? state.appsOpen.delete(n) : state.appsOpen.add(n);
+    safeSet('appsOpen', JSON.stringify([...state.appsOpen]));
+    render();
+  } else if (b.dataset.clear) clearSearch();
+  else if (b.dataset.forget) forgetProject(b.dataset.forget);
+  else if (b.dataset.term) openTerminal(b.dataset.term, b.dataset.n, b.dataset.cwd);
   else if (b.dataset.p) projectAction(b.dataset.p, b.dataset.a);
   else if (b.dataset.c) containerAction(b.dataset.c, b.dataset.n, b.dataset.a);
 });
@@ -180,10 +286,28 @@ $('#search').addEventListener('input', (e) => {
   render();
 });
 
+function clearSearch() {
+  $('#search').value = '';
+  state.filter = '';
+  render();
+}
+
+// "/" foca a busca; Esc limpa (fora de campos de texto e do terminal).
+document.addEventListener('keydown', (e) => {
+  const typing = e.target.closest('input, textarea, .xterm');
+  if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    $('#search').focus();
+  } else if (e.key === 'Escape' && e.target === $('#search')) {
+    clearSearch();
+    e.target.blur();
+  }
+});
+
 // --- terminais ---------------------------------------------------------------
 let termSeq = 0;
 
-function openTerminal(containerId, name) {
+function openTerminal(containerId, name, cwd) {
   const key = `t${++termSeq}`;
   const section = $('#terminals');
   section.classList.remove('hidden', 'minimized');
@@ -214,7 +338,7 @@ function openTerminal(containerId, name) {
   activateTerm(key);
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws/exec/${containerId}?cols=${term.cols}&rows=${term.rows}`);
+  const ws = new WebSocket(`${proto}://${location.host}/ws/exec/${containerId}?cols=${term.cols}&rows=${term.rows}${cwd ? `&cwd=${encodeURIComponent(cwd)}` : ''}`);
   ws.binaryType = 'arraybuffer';
   entry.ws = ws;
 
