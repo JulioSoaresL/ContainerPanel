@@ -20,6 +20,20 @@ PANEL_PORT=8000 ./start.sh
 
 Acesse <http://127.0.0.1:7777>.
 
+## App desktop (Electron / Flatpak)
+
+O mesmo painel também roda como app, sem precisar subir o servidor na mão: o app inicia o
+`server.js` numa porta livre e abre numa janela própria.
+
+```bash
+npm install
+npm run app           # roda o app em modo dev (no Ubuntu 24.04+: npm run app -- --no-sandbox)
+npm run build:dir     # gera o app em dist/linux-unpacked/
+```
+
+No app, os projetos ficam salvos em `~/.local/share/docker-panel/`, e não em `data/`.
+Para o pacote Flatpak e a publicação no Flathub, veja [flatpak/README.md](flatpak/README.md).
+
 ## Requisitos
 
 - Node.js 18+

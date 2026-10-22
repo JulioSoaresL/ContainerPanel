@@ -10,7 +10,9 @@ const Docker = require('dockerode');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PANEL_PORT) || 7777;
-const DATA_FILE = path.join(__dirname, 'data', 'projects.json');
+const DATA_FILE = path.join(process.env.PANEL_DATA_DIR || path.join(__dirname, 'data'), 'projects.json');
+// O binário standalone do compose (usado no Flatpak) dispensa o CLI `docker`.
+const COMPOSE_CMD = process.env.PANEL_COMPOSE_BIN ? [process.env.PANEL_COMPOSE_BIN] : ['docker', 'compose'];
 const STANDALONE = '__standalone__';
 const IGNORED = '__ignored__';   // projetos que o usuário removeu da lista
 const SCAN_DIRS = (process.env.PANEL_SCAN_DIRS || os.homedir()).split(':').filter(Boolean);
@@ -26,7 +28,8 @@ app.use(express.json());
 // --- segurança ---------------------------------------------------------------
 // O painel dá shell em qualquer container, então só aceita requisições vindas da
 // própria página (bloqueia DNS rebinding e outros sites chamando localhost).
-const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+// Preenchido em start(), quando a porta real é conhecida (pode ser 0 = porta livre).
+const ALLOWED_HOSTS = new Set();
 function isAllowed(headers, method) {
   if (!ALLOWED_HOSTS.has(headers.host)) return false;
   const origin = headers.origin;
@@ -239,12 +242,12 @@ async function listProjects() {
 function runCompose(name, args) {
   const meta = loadKnown()[name];
   if (!meta) return Promise.reject(new Error(`Projeto '${name}' desconhecido.`));
-  const base = ['compose', '-p', name];
+  const base = [...COMPOSE_CMD.slice(1), '-p', name];
   if (meta.workingDir) base.push('--project-directory', meta.workingDir);
   for (const f of meta.configFiles) base.push('-f', f);
 
   return new Promise((resolve, reject) => {
-    execFile('docker', [...base, ...args], {
+    execFile(COMPOSE_CMD[0], [...base, ...args], {
       cwd: meta.workingDir && fs.existsSync(meta.workingDir) ? meta.workingDir : undefined,
       maxBuffer: 20 * 1024 * 1024,
       timeout: 15 * 60 * 1000,
@@ -382,6 +385,19 @@ async function openShell(ws, id, params) {
   }
 }
 
-server.listen(PORT, HOST, () => {
-  console.log(`docker-panel rodando em http://${HOST}:${PORT}`);
-});
+function start({ port = PORT } = {}) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, HOST, () => {
+      const real = server.address().port;
+      ALLOWED_HOSTS.add(`127.0.0.1:${real}`).add(`localhost:${real}`);
+      resolve({ port: real, server });
+    });
+  });
+}
+
+module.exports = { start };
+
+if (require.main === module) {
+  start().then(({ port }) => console.log(`docker-panel rodando em http://${HOST}:${port}`));
+}

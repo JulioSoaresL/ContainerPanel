@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Docker Panel
+Comment=Gerencie os containers e projetos compose da sua máquina
+Exec=docker-panel
+Icon=io.github.JulioSoaresL.DockerPanel
+Terminal=false
+Categories=Development;
+Keywords=docker;compose;container;terminal;

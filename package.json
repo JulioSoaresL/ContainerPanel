@@ -3,9 +3,30 @@
   "version": "1.0.0",
   "description": "Painel web local para gerenciar todos os containers Docker da máquina",
   "private": true,
-  "main": "server.js",
+  "license": "MIT",
+  "author": "Julio Soares",
+  "homepage": "https://github.com/JulioSoaresL/docker-panel-manager",
+  "main": "electron/main.js",
+  "desktopName": "io.github.JulioSoaresL.DockerPanel.desktop",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "app": "electron .",
+    "build:dir": "electron-builder --linux dir -c.electronDist=node_modules/electron/dist"
+  },
+  "build": {
+    "appId": "io.github.JulioSoaresL.DockerPanel",
+    "productName": "Docker Panel",
+    "files": [
+      "server.js",
+      "electron/**",
+      "public/**",
+      "package.json"
+    ],
+    "linux": {
+      "executableName": "docker-panel",
+      "target": "dir",
+      "category": "Development"
+    }
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -13,5 +34,9 @@
     "dockerode": "^5.0.1",
     "express": "^5.2.1",
     "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3"
   }
 }

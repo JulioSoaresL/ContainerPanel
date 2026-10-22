@@ -1,2 +1,6 @@
 node_modules/
 data/
+dist/
+build-dir/
+repo/
+.flatpak-builder/
