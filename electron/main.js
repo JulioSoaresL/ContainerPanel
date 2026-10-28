@@ -33,14 +33,14 @@ async function createWindow() {
   try {
     ({ port, server } = await start({ port: 0 }));
   } catch (e) {
-    dialog.showErrorBox('Docker Panel', `Não foi possível iniciar o painel:\n${e.message}`);
+    dialog.showErrorBox('Container Panel', `Não foi possível iniciar o painel:\n${e.message}`);
     return app.quit();
   }
 
   win = new BrowserWindow({
     width: 1280,
     height: 860,
-    title: 'Docker Panel',
+    title: 'Container Panel',
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },

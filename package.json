@@ -5,17 +5,18 @@
   "private": true,
   "license": "MIT",
   "author": "Julio Soares",
-  "homepage": "https://github.com/JulioSoaresL/docker-panel-manager",
+  "homepage": "https://github.com/JulioSoaresL/ContainerPanel",
   "main": "electron/main.js",
-  "desktopName": "io.github.JulioSoaresL.DockerPanel.desktop",
+  "desktopName": "io.github.JulioSoaresL.ContainerPanel.desktop",
   "scripts": {
     "start": "node server.js",
     "app": "electron .",
     "build:dir": "electron-builder --linux dir -c.electronDist=node_modules/electron/dist"
   },
   "build": {
-    "appId": "io.github.JulioSoaresL.DockerPanel",
-    "productName": "Docker Panel",
+    "appId": "io.github.JulioSoaresL.ContainerPanel",
+    "npmRebuild": false,
+    "productName": "Container Panel",
     "files": [
       "server.js",
       "electron/**",

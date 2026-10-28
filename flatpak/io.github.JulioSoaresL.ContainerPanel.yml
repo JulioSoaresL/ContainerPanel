@@ -1,4 +1,4 @@
-id: io.github.JulioSoaresL.DockerPanel
+id: io.github.JulioSoaresL.ContainerPanel
 runtime: org.freedesktop.Platform
 runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
@@ -60,11 +60,15 @@ modules:
           - exec zypak-wrapper /app/main/docker-panel "$@"
     build-commands:
       - npm ci --offline --cache=$FLATPAK_BUILDER_BUILDDIR/flatpak-node/npm-cache
+      # O Electron 45 baixa o binário sob demanda; o build é offline, então extrai o zip das fontes.
+      - |
+        case "$FLATPAK_ARCH" in x86_64) EARCH=x64 ;; aarch64) EARCH=arm64 ;; esac
+        unzip -q flatpak-node/cache/electron/electron-v45.0.0-linux-$EARCH.zip -d node_modules/electron/dist
       - |
         . flatpak-node/electron-builder-arch-args.sh
         npm run build:dir -- $ELECTRON_BUILDER_ARCH_ARGS
       - cp -a dist/linux*unpacked /app/main
       - install -Dm755 docker-panel.sh /app/bin/docker-panel
-      - install -Dm644 flatpak/io.github.JulioSoaresL.DockerPanel.desktop -t /app/share/applications
-      - install -Dm644 flatpak/io.github.JulioSoaresL.DockerPanel.metainfo.xml -t /app/share/metainfo
-      - install -Dm644 public/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.JulioSoaresL.DockerPanel.svg
+      - install -Dm644 flatpak/io.github.JulioSoaresL.ContainerPanel.desktop -t /app/share/applications
+      - install -Dm644 flatpak/io.github.JulioSoaresL.ContainerPanel.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 public/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.JulioSoaresL.ContainerPanel.svg

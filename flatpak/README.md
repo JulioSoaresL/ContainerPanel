@@ -1,6 +1,6 @@
 # Flatpak
 
-App ID: `io.github.JulioSoaresL.DockerPanel`. O app é o Electron de `electron/main.js`, que sobe o
+App ID: `io.github.JulioSoaresL.ContainerPanel`. O app é o Electron de `electron/main.js`, que sobe o
 `server.js` numa porta livre em 127.0.0.1. As ações de projeto usam o binário standalone do
 Docker Compose embutido no pacote (`PANEL_COMPOSE_BIN=/app/bin/docker-compose`).
 
@@ -9,11 +9,11 @@ Docker Compose embutido no pacote (`PANEL_COMPOSE_BIN=/app/bin/docker-compose`).
 ```bash
 flatpak install --user flathub org.flatpak.Builder
 flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --force-clean \
-  build-dir flatpak/io.github.JulioSoaresL.DockerPanel.yml
-flatpak run io.github.JulioSoaresL.DockerPanel
+  build-dir flatpak/io.github.JulioSoaresL.ContainerPanel.yml
+flatpak run io.github.JulioSoaresL.ContainerPanel
 ```
 
-Os dados ficam em `~/.var/app/io.github.JulioSoaresL.DockerPanel/data/docker-panel/`.
+Os dados ficam em `~/.var/app/io.github.JulioSoaresL.ContainerPanel/data/docker-panel/`.
 
 ## Atualizar dependências
 
@@ -30,9 +30,9 @@ Ao atualizar o Docker Compose, troque a versão nas URLs e os `sha256` pelos arq
 ## Lint
 
 ```bash
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest flatpak/io.github.JulioSoaresL.DockerPanel.yml
+flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest flatpak/io.github.JulioSoaresL.ContainerPanel.yml
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo   # após build com --repo=repo
-appstreamcli validate flatpak/io.github.JulioSoaresL.DockerPanel.metainfo.xml
+appstreamcli validate flatpak/io.github.JulioSoaresL.ContainerPanel.metainfo.xml
 ```
 
 ## Publicar no Flathub
@@ -45,8 +45,16 @@ appstreamcli validate flatpak/io.github.JulioSoaresL.DockerPanel.metainfo.xml
    - `--filesystem=/run/docker.sock` / `xdg-run/docker.sock`: o app é um cliente da API do Docker.
    - `--filesystem=home`: localiza arquivos compose e o compose precisa ler os projetos nos caminhos originais.
    - `--share=network`: servidor local da interface e links para as portas dos containers.
-5. O Flathub costuma barrar nomes com marcas de terceiros: talvez seja preciso trocar o nome
-   exibido (ex.: "Container Panel") mantendo "Docker" só na descrição.
+5. O nome exibido é "Container Panel" (o Flathub barra marcas de terceiros no nome); "Docker"
+   aparece só na descrição. O App ID segue o repo `github.com/JulioSoaresL/ContainerPanel`, como
+   o Flathub exige para `io.github.*`.
+
+## Notas do build
+
+- O build é offline. O Electron 45 não baixa o binário no `npm ci`, então o manifest extrai o zip
+  que vem no `generated-sources.json` para `node_modules/electron/dist`.
+- `npmRebuild: false` no `package.json`: o electron-builder tentaria recompilar o `cpu-features`
+  (dependência opcional do `ssh2`, via dockerode) baixando headers. O painel não usa SSH.
 
 ## Limitações
 

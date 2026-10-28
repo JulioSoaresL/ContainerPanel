@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.JulioSoaresL.DockerPanel</id>
-  <name>Docker Panel</name>
-  <summary>Manage the containers and compose projects on your machine</summary>
-  <summary xml:lang="pt-BR">Gerencie os containers e projetos compose da sua máquina</summary>
+  <id>io.github.JulioSoaresL.ContainerPanel</id>
+  <name>Container Panel</name>
+  <summary>Manage the Docker containers and compose projects on your machine</summary>
+  <summary xml:lang="pt-BR">Gerencie os containers Docker e projetos compose da sua máquina</summary>
   <developer id="io.github.juliosoaresl">
     <name>Julio Soares</name>
   </developer>
@@ -16,16 +16,17 @@
       <li>Start, stop and restart single containers</li>
       <li>Open a terminal in any running container, in tabs</li>
       <li>Published ports and mounted projects become clickable links</li>
+      <li>Switch between a list of projects and one tab per project</li>
     </ul>
     <p>Requires Docker installed on the host, with your user allowed to access the Docker socket.</p>
   </description>
-  <launchable type="desktop-id">io.github.JulioSoaresL.DockerPanel.desktop</launchable>
-  <url type="homepage">https://github.com/JulioSoaresL/docker-panel-manager</url>
-  <url type="bugtracker">https://github.com/JulioSoaresL/docker-panel-manager/issues</url>
-  <url type="vcs-browser">https://github.com/JulioSoaresL/docker-panel-manager</url>
+  <launchable type="desktop-id">io.github.JulioSoaresL.ContainerPanel.desktop</launchable>
+  <url type="homepage">https://github.com/JulioSoaresL/ContainerPanel</url>
+  <url type="bugtracker">https://github.com/JulioSoaresL/ContainerPanel/issues</url>
+  <url type="vcs-browser">https://github.com/JulioSoaresL/ContainerPanel</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/JulioSoaresL/docker-panel-manager/main/docs/screenshot.png</image>
+      <image>https://raw.githubusercontent.com/JulioSoaresL/ContainerPanel/main/docs/screenshot.png</image>
       <caption>Projects and containers</caption>
     </screenshot>
   </screenshots>
@@ -35,7 +36,7 @@
     <color type="primary" scheme_preference="dark">#0d1117</color>
   </branding>
   <releases>
-    <release version="1.0.0" date="2026-10-22">
+    <release version="1.0.0" date="2026-10-28">
       <description>
         <p>First desktop release.</p>
       </description>
