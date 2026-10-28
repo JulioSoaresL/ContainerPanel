@@ -13,11 +13,20 @@
     <div class="wrap topbar-inner">
       <h1>Docker Panel</h1>
       <div id="summary" class="summary" aria-live="polite"></div>
+      <div id="view-toggle" class="seg view-toggle" role="group" aria-label="Visualização">
+        <button class="btn" data-view="list" title="Lista" aria-label="Visualizar em lista">☰</button>
+        <button class="btn" data-view="tabs" title="Abas" aria-label="Visualizar em abas">▭</button>
+      </div>
       <label class="search">
         <span class="kbd" aria-hidden="true">/</span>
         <input id="search" type="search" placeholder="Filtrar por nome, imagem ou projeto…" autocomplete="off" aria-label="Filtrar containers">
       </label>
     </div>
+    <nav id="ptabs" class="ptabs wrap" aria-label="Projetos">
+      <div id="ptab-list" class="ptab-list" role="tablist"></div>
+      <button id="ptab-more" class="ptab-more" aria-haspopup="menu" aria-expanded="false" title="Mais projetos" hidden>…</button>
+      <div id="ptab-menu" class="ptab-menu" role="menu" hidden></div>
+    </nav>
   </header>
 
   <main id="projects" class="projects wrap"></main>

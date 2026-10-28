@@ -6,7 +6,10 @@ const state = {
   projects: [],
   filter: '',
   busy: new Map(),            // ações em andamento: "p:nome" / "c:id" -> ação
-  collapsed: new Set(JSON.parse(safeGet('collapsed') || '[]')),
+  view: safeGet('view') === 'list' ? 'list' : 'tabs',   // visualização: cards em lista ou abas
+  active: safeGet('activeTab'),   // projeto da aba selecionada
+  collapsed: new Set(JSON.parse(safeGet('collapsed') || '[]')),   // cards recolhidos na lista
+  moreOpen: false,                // menu "…" das abas que não cabem
   appsOpen: new Set(JSON.parse(safeGet('appsOpen') || '[]')),   // nomes de containers com a lista de projetos aberta
   showHidden: safeGet('showHidden') === '1',
   terms: new Map(),           // id da aba -> { term, fit, ws, tab, pane }
@@ -147,32 +150,131 @@ function render() {
     <span class="stat"><b>${projects}</b> projetos</span>
     ${hidden ? `<button class="btn ghost hidden-toggle ${state.showHidden ? 'active' : ''}" data-show-hidden="1" aria-pressed="${state.showHidden}" title="${state.showHidden ? 'Esconder' : 'Mostrar'} projetos ocultos">Ocultos (${hidden})</button>` : ''}`;
 
-  const html = (state.showHidden ? state.projects : visible).map((p) => {
+  const tabs = (state.showHidden ? state.projects : visible).map((p) => {
     const containers = p.containers.filter((c) => matches(p, c));
     const projectMatches = matches(p, null);
-    if (state.filter && !projectMatches && containers.length === 0) return '';
-    const shown = projectMatches ? p.containers : containers;
-    return renderProject(p, shown);
-  }).join('');
+    if (state.filter && !projectMatches && containers.length === 0) return null;
+    return { p, shown: projectMatches ? p.containers : containers };
+  }).filter(Boolean);
+  // A aba salva pode estar fora do filtro; mostra a primeira sem esquecer a escolha.
+  const current = tabs.find((t) => t.p.name === state.active) || tabs[0];
+
+  const list = state.view === 'list';
+  document.body.dataset.view = state.view;
+  for (const b of document.querySelectorAll('#view-toggle [data-view]')) {
+    b.classList.toggle('active', b.dataset.view === state.view);
+    b.setAttribute('aria-pressed', b.dataset.view === state.view);
+  }
 
   // O refresh a cada 3s recria o HTML; devolve o foco ao mesmo controle (navegação por teclado).
   const focused = focusKey(document.activeElement);
+  $('#ptabs').hidden = list;
+  if (list) state.moreOpen = false;
+  else renderTabs(tabs.map((t) => t.p), current?.p.name);
+  const html = list
+    ? tabs.map((t) => renderProject(t.p, t.shown, true)).join('')
+    : current && renderProject(current.p, current.shown);
   $('#projects').innerHTML = html || (state.filter
     ? `<div class="empty"><p>Nada encontrado para “${esc(state.filter)}”.</p><button class="btn" data-clear="1">Limpar filtro</button></div>`
     : '<div class="empty"><p>Nenhum container encontrado.</p></div>');
-  if (focused) [...$('#projects').querySelectorAll('button, a')].find((el) => focusKey(el) === focused)?.focus();
+  if (focused) [...document.querySelectorAll('#ptabs button, #projects button, #projects a')].find((el) => focusKey(el) === focused)?.focus();
 }
 
 function focusKey(el) {
-  if (!el || !$('#projects').contains(el)) return null;
+  if (!el?.closest('#projects, #ptabs')) return null;
   return `${el.tagName}|${el.getAttribute('href') || ''}|${JSON.stringify({ ...el.dataset })}`;
 }
 
-function renderProject(p, containers) {
+// --- abas de projeto -----------------------------------------------------------
+const tabLabel = (p) => (p.standalone ? 'Avulsos' : p.name);
+
+function renderTabs(projects, active) {
+  $('#ptab-list').innerHTML = projects.map((p) => {
+    const on = p.name === active;
+    return `
+      <button class="ptab ${on ? 'active' : ''} ${p.hidden ? 'is-hidden' : ''}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-tab="${esc(p.name)}" title="${esc(tabLabel(p))}">
+        <span class="dot ${projectStatus(p)}"></span><span class="ptab-name">${esc(tabLabel(p))}</span><span class="ptab-count">${p.running}/${p.containers.length}</span>
+      </button>`;
+  }).join('');
+  fitTabs();
+}
+
+// Esconde as abas que não cabem (de trás para frente, nunca a ativa) e as lista no menu "…".
+function fitTabs() {
+  if (state.view !== 'tabs') return;
+  const list = $('#ptab-list');
+  const more = $('#ptab-more');
+  const menu = $('#ptab-menu');
+  const tabs = [...list.children];
+  for (const t of tabs) t.hidden = false;
+  more.hidden = true;
+  const overflow = [];
+  if (list.scrollWidth > list.clientWidth) {
+    more.hidden = false;
+    for (let i = tabs.length - 1; i >= 0 && list.scrollWidth > list.clientWidth; i--) {
+      if (tabs[i].classList.contains('active')) continue;
+      tabs[i].hidden = true;
+      overflow.unshift(tabs[i]);
+    }
+  }
+  more.textContent = `… ${overflow.length}`;
+  menu.replaceChildren(...overflow.map((t) => {
+    const item = t.cloneNode(true);
+    item.hidden = false;
+    item.className = `ptab-item ${t.classList.contains('is-hidden') ? 'is-hidden' : ''}`;
+    item.setAttribute('role', 'menuitem');
+    item.removeAttribute('aria-selected');
+    item.removeAttribute('tabindex');
+    return item;
+  }));
+  if (!overflow.length) state.moreOpen = false;
+  menu.hidden = !state.moreOpen;
+  more.setAttribute('aria-expanded', state.moreOpen);
+}
+
+function selectTab(name) {
+  state.active = name;
+  state.moreOpen = false;
+  safeSet('activeTab', name);
+  render();
+}
+
+$('#ptabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id === 'ptab-more') {
+    state.moreOpen = !state.moreOpen;
+    fitTabs();
+    if (state.moreOpen) $('#ptab-menu button')?.focus();
+  } else if (b.dataset.tab) selectTab(b.dataset.tab);
+});
+
+// ←/→ trocam de aba entre as visíveis.
+$('#ptab-list').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const tabs = [...$('#ptab-list').children].filter((t) => !t.hidden);
+  const i = tabs.findIndex((t) => t.classList.contains('active'));
+  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+  if (!next) return;
+  e.preventDefault();
+  selectTab(next.dataset.tab);
+  $('#ptab-list .ptab.active')?.focus();
+});
+
+document.addEventListener('click', (e) => {
+  if (state.moreOpen && !e.target.closest('#ptabs')) {
+    state.moreOpen = false;
+    fitTabs();
+  }
+});
+
+new ResizeObserver(() => fitTabs()).observe($('#ptabs'));
+
+function renderProject(p, containers, collapsible = false) {
   const status = projectStatus(p);
   const busyAction = state.busy.get(`p:${p.name}`);
   const busy = !!busyAction;
-  const collapsed = state.collapsed.has(p.name) && !state.filter;
+  const collapsed = collapsible && state.collapsed.has(p.name) && !state.filter;
   const title = p.standalone ? 'Avulsos' : p.name;
   const sub = p.standalone ? 'containers fora de docker compose' : tildify(p.workingDir);
   // Sem compose no disco: subir/parar/reiniciar ainda funcionam direto nos containers, derrubar não.
@@ -199,7 +301,7 @@ function renderProject(p, containers) {
   return `
     <article class="card ${busy ? 'busy' : ''} ${p.hidden ? 'is-hidden' : ''}">
       <header class="card-head">
-        <button class="collapse" data-collapse="${esc(p.name)}" aria-expanded="${!collapsed}" title="Recolher/expandir">${collapsed ? '▸' : '▾'}</button>
+        ${collapsible ? `<button class="collapse" data-collapse="${esc(p.name)}" aria-expanded="${!collapsed}" title="Recolher/expandir">${collapsed ? '▸' : '▾'}</button>` : ''}
         <div class="title">
           <div class="title-line">
             <h2>${esc(title)}</h2>
@@ -298,6 +400,14 @@ $('#projects').addEventListener('click', (e) => {
   else if (b.dataset.c) containerAction(b.dataset.c, b.dataset.n, b.dataset.a);
 });
 
+$('#view-toggle').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-view]');
+  if (!b || b.dataset.view === state.view) return;
+  state.view = b.dataset.view;
+  safeSet('view', state.view);
+  render();
+});
+
 $('#summary').addEventListener('click', (e) => {
   if (!e.target.closest('[data-show-hidden]')) return;
   state.showHidden = !state.showHidden;
@@ -322,6 +432,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     $('#search').focus();
+  } else if (e.key === 'Escape' && state.moreOpen) {
+    state.moreOpen = false;
+    fitTabs();
+    $('#ptab-more').focus();
   } else if (e.key === 'Escape' && e.target === $('#search')) {
     clearSearch();
     e.target.blur();
@@ -416,6 +530,7 @@ $('#term-toggle').addEventListener('click', () => {
 });
 
 window.addEventListener('resize', () => {
+  fitTabs();
   const t = state.terms.get(state.activeTerm);
   if (t) t.fit.fit();
 });

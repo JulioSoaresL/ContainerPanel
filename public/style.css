@@ -76,7 +76,9 @@ body.has-terms .projects { padding-bottom: calc(var(--term-h) + 24px); }
 .stat { display: inline-flex; align-items: center; gap: 6px; }
 .stat b { color: var(--text); font-variant-numeric: tabular-nums; }
 .stat.error { color: var(--danger); }
-.search { position: relative; margin-left: auto; width: min(360px, 100%); }
+.view-toggle { margin-left: auto; flex: none; }
+.view-toggle .btn.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); position: relative; }
+.search { position: relative; width: min(360px, 100%); }
 .search .kbd {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
   font: 11px var(--mono); color: var(--muted);
@@ -92,6 +94,33 @@ body.has-terms .projects { padding-bottom: calc(var(--term-h) + 24px); }
 .projects { padding: 20px; display: grid; gap: 16px; }
 .empty { color: var(--muted); text-align: center; padding: 48px 20px; }
 .empty p { margin: 0 0 12px; }
+
+/* --- abas de projeto --- */
+.ptabs { position: relative; display: flex; align-items: flex-end; gap: 4px; padding: 0 20px; }
+.ptab-list { display: flex; gap: 2px; flex: 1; min-width: 0; overflow: hidden; }
+.ptab, .ptab-more {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  padding: 8px 12px; background: none; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.ptabs[hidden], .ptab[hidden], .ptab-more[hidden], .ptab-menu[hidden] { display: none; }
+.ptab:hover, .ptab-more:hover, .ptab-more[aria-expanded="true"] { color: var(--text); background: var(--btn-hover); }
+.ptab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+.ptab.is-hidden, .ptab-item.is-hidden { opacity: .55; }
+.ptab-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.ptab-count { font-size: 11.5px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ptab .dot, .ptab-item .dot { width: 8px; height: 8px; box-shadow: none; }
+.ptab-menu {
+  position: absolute; top: 100%; right: 20px; z-index: 6;
+  display: flex; flex-direction: column; min-width: 220px; max-height: 60vh; overflow-y: auto; padding: 4px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+.ptab-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  background: none; border: 0; border-radius: 6px; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.ptab-item:hover, .ptab-item:focus-visible { background: var(--btn-hover); }
+.ptab-item .ptab-name { flex: 1; max-width: none; }
 
 /* --- card de projeto --- */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -230,7 +259,10 @@ a.chip:hover { border-color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 760px) {
   .topbar-inner, .projects { padding-left: 16px; padding-right: 16px; }
   .search { margin-left: 0; width: 100%; }
-  .card-head .actions { margin-left: 34px; width: 100%; }
+  .card-head .actions { margin-left: 0; width: 100%; }
+  body[data-view="list"] .card-head .actions { margin-left: 34px; }
+  .ptabs { padding: 0 16px; }
+  .ptab-menu { right: 16px; }
   .row { grid-template-columns: 10px 1fr auto; row-gap: 6px; padding: 10px 14px; }
   .row > .c-status { grid-column: 3; justify-content: flex-end; }
   .row > .c-ports { display: flex; grid-column: 2; }
