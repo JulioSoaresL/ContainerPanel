@@ -8,6 +8,7 @@ const state = {
   busy: new Map(),            // ações em andamento: "p:nome" / "c:id" -> ação
   collapsed: new Set(JSON.parse(safeGet('collapsed') || '[]')),
   appsOpen: new Set(JSON.parse(safeGet('appsOpen') || '[]')),   // nomes de containers com a lista de projetos aberta
+  showHidden: safeGet('showHidden') === '1',
   terms: new Map(),           // id da aba -> { term, fit, ws, tab, pane }
   activeTerm: null,
 };
@@ -63,10 +64,19 @@ function containerAction(id, name, action) {
   runAction(`c:${id}`, action, `${labels[action]} ${name}`, () => api('POST', `/api/containers/${id}/${action}`));
 }
 
-async function forgetProject(name) {
-  if (!confirm(`Remover "${name}" da lista? (não mexe em nada no Docker)`)) return;
-  await api('DELETE', `/api/projects/${encodeURIComponent(name)}`).catch((e) => showToast(e.message, 'error'));
+async function hideProject(name, hide) {
+  await api('POST', `/api/projects/${encodeURIComponent(name)}/${hide ? 'hide' : 'unhide'}`).catch((e) => showToast(e.message, 'error'));
   refresh();
+}
+
+function removeProject(name) {
+  if (!confirm(`Deletar os containers do projeto "${name}"?\n\nOs containers serão removidos (volumes são mantidos).`)) return;
+  runAction(`p:${name}`, 'remove', `Deletando containers de ${name}`, () => api('POST', `/api/projects/${encodeURIComponent(name)}/remove`));
+}
+
+function removeContainer(id, name) {
+  if (!confirm(`Deletar o container "${name}"?`)) return;
+  runAction(`c:${id}`, 'rm', `Deletando ${name}`, () => api('DELETE', `/api/containers/${id}`));
 }
 
 // --- formatação --------------------------------------------------------------
@@ -126,15 +136,18 @@ function projectStatus(p) {
 }
 
 function render() {
-  const total = state.projects.reduce((n, p) => n + p.containers.length, 0);
-  const running = state.projects.reduce((n, p) => n + p.running, 0);
-  const projects = state.projects.filter((p) => !p.standalone).length;
+  const visible = state.projects.filter((p) => !p.hidden);
+  const hidden = state.projects.length - visible.length;
+  const total = visible.reduce((n, p) => n + p.containers.length, 0);
+  const running = visible.reduce((n, p) => n + p.running, 0);
+  const projects = visible.filter((p) => !p.standalone).length;
   $('#summary').innerHTML = `
     <span class="stat"><span class="dot running"></span><b>${running}</b> rodando</span>
     <span class="stat"><span class="dot stopped"></span><b>${total - running}</b> parados</span>
-    <span class="stat"><b>${projects}</b> projetos</span>`;
+    <span class="stat"><b>${projects}</b> projetos</span>
+    ${hidden ? `<button class="btn ghost hidden-toggle ${state.showHidden ? 'active' : ''}" data-show-hidden="1" aria-pressed="${state.showHidden}" title="${state.showHidden ? 'Esconder' : 'Mostrar'} projetos ocultos">Ocultos (${hidden})</button>` : ''}`;
 
-  const html = state.projects.map((p) => {
+  const html = (state.showHidden ? state.projects : visible).map((p) => {
     const containers = p.containers.filter((c) => matches(p, c));
     const projectMatches = matches(p, null);
     if (state.filter && !projectMatches && containers.length === 0) return '';
@@ -165,17 +178,18 @@ function renderProject(p, containers) {
   // Sem compose no disco: subir/parar/reiniciar ainda funcionam direto nos containers, derrubar não.
   const dis = busy || (!p.composeAvailable && p.containers.length === 0) ? 'disabled' : '';
   const disDown = busy || !p.composeAvailable ? 'disabled' : '';
-  const attrs = (a) => `data-p="${esc(p.name)}" data-a="${a}"`;
+  const attrs = (a, label) => `data-p="${esc(p.name)}" data-a="${a}" title="${label}" aria-label="${label} ${esc(p.name)}"`;
   const allUp = p.containers.length > 0 && p.running === p.containers.length;
   const actions = p.standalone ? '' : `
     <div class="actions">
-      ${!p.composeAvailable ? '<span class="badge warn" title="O arquivo docker-compose não existe mais no disco. Subir/Parar/Reiniciar agem direto nos containers; Derrubar fica indisponível.">compose ausente</span>' : ''}
-      ${btn(allUp ? 'ghost up' : 'primary', attrs('up'), '▲ Subir', busyAction, 'up', dis)}
-      ${btn('', attrs('restart'), '↻ Reiniciar', busyAction, 'restart', dis || (p.running ? '' : 'disabled'))}
-      ${btn('', attrs('stop'), '■ Parar', busyAction, 'stop', dis || (p.running ? '' : 'disabled'))}
+      ${!p.composeAvailable ? '<span class="badge warn" title="O arquivo docker-compose não existe mais no disco. Subir/Parar/Reiniciar agem direto nos containers; use Deletar containers no lugar de Derrubar.">compose ausente</span>' : ''}
+      ${btn(`icon-btn ${allUp ? 'ghost up' : 'primary'}`, attrs('up', 'Subir'), '▲', busyAction, 'up', dis)}
+      ${btn('icon-btn', attrs('restart', 'Reiniciar'), '↻', busyAction, 'restart', dis || (p.running ? '' : 'disabled'))}
+      ${btn('icon-btn', attrs('stop', 'Parar'), '■', busyAction, 'stop', dis || (p.running ? '' : 'disabled'))}
       <span class="sep"></span>
-      ${btn('danger', attrs('down'), '▼ Derrubar', busyAction, 'down', disDown || (p.containers.length ? '' : 'disabled'))}
-      ${p.containers.length === 0 ? `<button class="btn ghost icon-btn" data-forget="${esc(p.name)}" title="Remover da lista" aria-label="Remover ${esc(p.name)} da lista">✕</button>` : ''}
+      ${btn('icon-btn danger', attrs('down', 'Derrubar'), '▼', busyAction, 'down', disDown || (p.containers.length ? '' : 'disabled'))}
+      ${btn('icon-btn danger', `data-remove="${esc(p.name)}" title="Deletar containers (remove containers e redes, mantém volumes)" aria-label="Deletar containers de ${esc(p.name)}"`, '🗑', busyAction, 'remove', busy || !p.containers.length ? 'disabled' : '')}
+      <button class="btn ghost" data-hide="${esc(p.name)}" data-hidden="${p.hidden ? 1 : ''}">${p.hidden ? 'Mostrar' : 'Ocultar'}</button>
     </div>`;
 
   const rows = containers.length
@@ -183,7 +197,7 @@ function renderProject(p, containers) {
     : '<div class="row-empty">Sem containers — use “Subir” para criar.</div>';
 
   return `
-    <article class="card ${busy ? 'busy' : ''}">
+    <article class="card ${busy ? 'busy' : ''} ${p.hidden ? 'is-hidden' : ''}">
       <header class="card-head">
         <button class="collapse" data-collapse="${esc(p.name)}" aria-expanded="${!collapsed}" title="Recolher/expandir">${collapsed ? '▸' : '▾'}</button>
         <div class="title">
@@ -228,6 +242,7 @@ function renderContainer(c) {
           ${running
             ? `${btn('', attrs('restart', 'Reiniciar'), '↻', busyAction, 'restart', dis)}${btn('', attrs('stop', 'Parar'), '■', busyAction, 'stop', dis)}`
             : btn('up', attrs('start', 'Iniciar'), '▶', busyAction, 'start', dis)}
+          ${btn('danger', `data-rm="${c.id}" data-n="${esc(c.name)}" title="Deletar" aria-label="Deletar ${esc(c.name)}"`, '🗑', busyAction, 'rm', dis)}
         </div>
         <button class="btn term" ${running ? '' : 'disabled'} data-term="${c.id}" data-n="${esc(c.name)}">&gt;_ Terminal</button>
       </div>
@@ -275,10 +290,19 @@ $('#projects').addEventListener('click', (e) => {
     safeSet('appsOpen', JSON.stringify([...state.appsOpen]));
     render();
   } else if (b.dataset.clear) clearSearch();
-  else if (b.dataset.forget) forgetProject(b.dataset.forget);
+  else if (b.dataset.hide) hideProject(b.dataset.hide, !b.dataset.hidden);
+  else if (b.dataset.remove) removeProject(b.dataset.remove);
+  else if (b.dataset.rm) removeContainer(b.dataset.rm, b.dataset.n);
   else if (b.dataset.term) openTerminal(b.dataset.term, b.dataset.n, b.dataset.cwd);
   else if (b.dataset.p) projectAction(b.dataset.p, b.dataset.a);
   else if (b.dataset.c) containerAction(b.dataset.c, b.dataset.n, b.dataset.a);
+});
+
+$('#summary').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-show-hidden]')) return;
+  state.showHidden = !state.showHidden;
+  safeSet('showHidden', state.showHidden ? '1' : '');
+  render();
 });
 
 $('#search').addEventListener('input', (e) => {

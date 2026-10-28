@@ -96,6 +96,7 @@ body.has-terms .projects { padding-bottom: calc(var(--term-h) + 24px); }
 /* --- card de projeto --- */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .card.busy { opacity: .8; }
+.card.is-hidden { opacity: .55; }
 .card-head {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 12px 14px; background: var(--card-head);
@@ -199,6 +200,8 @@ a.chip:hover { border-color: var(--accent); background: var(--accent-soft); }
 .btn.danger { background: none; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
 .btn.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 .btn.ghost { background: none; }
+.hidden-toggle { padding: 2px 10px; font-size: inherit; }
+.hidden-toggle.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 .btn.term { color: var(--accent); font-family: var(--mono); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .btn.term:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
 .app-row .btn { height: 24px; padding: 0 8px; font-size: 12px; }

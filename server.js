@@ -197,12 +197,18 @@ async function listProjects() {
         known[name] = entry;
         changed = true;
       }
-      if (ignored.delete(name)) changed = true;
     }
   }
   for (const [name, entry] of Object.entries(scannedProjects())) {
     if (known[name] || ignored.has(name)) continue;
     known[name] = entry;
+    changed = true;
+  }
+  // Sem containers e sem o arquivo compose no disco (pasta apagada): não há o que mostrar.
+  for (const [name, entry] of Object.entries(known)) {
+    if (groups[name] || entry.configFiles.every((f) => fs.existsSync(f))) continue;
+    delete known[name];
+    ignored.delete(name);
     changed = true;
   }
   if (changed) saveKnown({ ...known, ...(ignored.size ? { [IGNORED]: [...ignored] } : {}) });
@@ -216,6 +222,7 @@ async function listProjects() {
     return {
       name,
       standalone: false,
+      hidden: ignored.has(name),
       containers: list,
       running: list.filter((c) => c.state === 'running').length,
       configFiles: meta?.configFiles || [],
@@ -293,6 +300,34 @@ async function runFallback(name, action) {
   return lines.join('\n') || 'Nada a fazer.';
 }
 
+// Remove containers e redes do projeto (volumes ficam), com ou sem o arquivo compose.
+async function removeProject(name) {
+  const filters = { label: [`com.docker.compose.project=${name}`] };
+  const lines = [];
+  for (const c of await docker.listContainers({ all: true, filters })) {
+    await docker.getContainer(c.Id).remove({ force: true });
+    lines.push(`${c.Names[0].replace(/^\//, '')}: removido`);
+  }
+  for (const n of await docker.listNetworks({ filters })) {
+    await docker.getNetwork(n.Id).remove();
+    lines.push(`rede ${n.Name}: removida`);
+  }
+  return lines.join('\n') || 'Nada a fazer.';
+}
+
+function setHidden(name, hidden) {
+  const known = loadKnown();
+  const list = new Set(known[IGNORED] || []);
+  hidden ? list.add(name) : list.delete(name);
+  known[IGNORED] = [...list];
+  saveKnown(known);
+  return { ok: true };
+}
+
+app.post('/api/projects/:name/hide', wrap((req) => setHidden(req.params.name, true)));
+app.post('/api/projects/:name/unhide', wrap((req) => setHidden(req.params.name, false)));
+app.post('/api/projects/:name/remove', wrap(async (req) => ({ output: await removeProject(req.params.name) })));
+
 app.post('/api/projects/:name/:action', wrap(async (req) => {
   const { name, action } = req.params;
   const args = PROJECT_ACTIONS[action];
@@ -302,12 +337,8 @@ app.post('/api/projects/:name/:action', wrap(async (req) => {
   return { output: composeOk ? await runCompose(name, args) : await runFallback(name, action) };
 }));
 
-app.delete('/api/projects/:name', wrap(async (req) => {
-  const known = loadKnown();
-  const name = req.params.name;
-  delete known[name];
-  known[IGNORED] = [...new Set([...(known[IGNORED] || []), name])];
-  saveKnown(known);
+app.delete('/api/containers/:id', wrap(async (req) => {
+  await docker.getContainer(req.params.id).remove({ force: true });
   return { ok: true };
 }));
 
