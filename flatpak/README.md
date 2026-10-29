@@ -15,6 +15,20 @@ flatpak run io.github.JulioSoaresL.ContainerPanel
 
 Os dados ficam em `~/.var/app/io.github.JulioSoaresL.ContainerPanel/data/docker-panel/`.
 
+Se o build falhar com `Failure spawning rofiles-fuse`, adicione `--disable-rofiles-fuse`.
+
+## Gerar o arquivo para a release
+
+```bash
+flatpak run org.flatpak.Builder --user --force-clean --install-deps-from=flathub \
+  --repo=repo build-dir flatpak/io.github.JulioSoaresL.ContainerPanel.yml
+flatpak build-bundle repo ContainerPanel-x86_64.flatpak io.github.JulioSoaresL.ContainerPanel \
+  --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+```
+
+Anexe o `ContainerPanel-x86_64.flatpak` à release no GitHub, sempre com esse nome, porque o link do
+README aponta para `releases/latest/download/ContainerPanel-x86_64.flatpak`.
+
 ## Atualizar dependências
 
 O build do Flatpak é offline, então toda mudança no `package-lock.json` exige regenerar as fontes:

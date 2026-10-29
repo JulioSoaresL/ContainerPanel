@@ -11,6 +11,20 @@ Painel web local para gerenciar **todos** os containers Docker da máquina — d
 - Projetos montados em cada container rodando, com o link pelo nginx (ou a porta do
   container) e um **Terminal** que já abre na pasta do projeto
 
+## Instalação
+
+Baixe o [**ContainerPanel-x86_64.flatpak**](https://github.com/JulioSoaresL/ContainerPanel/releases/latest/download/ContainerPanel-x86_64.flatpak)
+da última release e instale:
+
+```bash
+flatpak install --user ContainerPanel-x86_64.flatpak
+flatpak run io.github.JulioSoaresL.ContainerPanel
+```
+
+O runtime necessário é baixado do Flathub na instalação. É preciso ter o Docker instalado e o
+usuário com acesso ao socket (grupo `docker` ou Docker rootless). Para atualizar, baixe o arquivo
+da release nova e rode o `flatpak install` de novo.
+
 ## Uso
 
 ```bash
