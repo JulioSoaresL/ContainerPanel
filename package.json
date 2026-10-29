@@ -1,6 +1,6 @@
 {
   "name": "docker-panel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Painel web local para gerenciar todos os containers Docker da máquina",
   "private": true,
   "license": "MIT",
@@ -37,7 +37,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "electron": "45.0.0",
+    "electron": "45.1.0",
     "electron-builder": "26.15.3"
   }
 }

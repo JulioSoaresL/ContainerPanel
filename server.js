@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -37,6 +38,29 @@ function isAllowed(headers, method) {
   try { return ALLOWED_HOSTS.has(new URL(origin).host); } catch { return false; }
 }
 app.use((req, res, next) => (isAllowed(req.headers, req.method) ? next() : res.status(403).send('Forbidden')));
+
+// A porta em 127.0.0.1 é visível para todos os usuários da máquina, então cada
+// sessão exige um token aleatório: chega uma vez pela URL (?t=) e vira cookie.
+const TOKEN = process.env.PANEL_TOKEN || crypto.randomBytes(32).toString('hex');
+let cookieName = 'panel_token';
+function hasToken(headers) {
+  const cookie = (headers.cookie || '').split(';').map((c) => c.trim().split('='))
+    .find(([k]) => k === cookieName)?.[1];
+  return !!cookie && safeEqual(cookie, TOKEN);
+}
+function safeEqual(a, b) {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+app.use((req, res, next) => {
+  if (typeof req.query.t === 'string' && safeEqual(req.query.t, TOKEN)) {
+    res.setHeader('Set-Cookie', `${cookieName}=${TOKEN}; HttpOnly; SameSite=Strict; Path=/`);
+    return res.redirect('/');
+  }
+  if (hasToken(req.headers)) return next();
+  res.status(401).send('Abra o painel pelo link com o token exibido ao iniciar.');
+});
 
 // --- projetos conhecidos (persistidos para sobreviver a um `compose down`) ----
 function loadKnown() {
@@ -364,7 +388,7 @@ const wss = new WebSocketServer({ noServer: true });
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const match = url.pathname.match(/^\/ws\/exec\/([a-zA-Z0-9_.-]+)$/);
-  if (!match || !isAllowed(req.headers, 'WS')) {
+  if (!match || !isAllowed(req.headers, 'WS') || !hasToken(req.headers)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     return socket.destroy();
   }
@@ -422,7 +446,9 @@ function start({ port = PORT } = {}) {
     server.listen(port, HOST, () => {
       const real = server.address().port;
       ALLOWED_HOSTS.add(`127.0.0.1:${real}`).add(`localhost:${real}`);
-      resolve({ port: real, server });
+      // Cookies não separam por porta: um nome por porta evita conflito entre instâncias.
+      cookieName = `panel_token_${real}`;
+      resolve({ port: real, server, url: `http://${HOST}:${real}/?t=${TOKEN}` });
     });
   });
 }
@@ -430,5 +456,5 @@ function start({ port = PORT } = {}) {
 module.exports = { start };
 
 if (require.main === module) {
-  start().then(({ port }) => console.log(`docker-panel rodando em http://${HOST}:${port}`));
+  start().then(({ url }) => console.log(`docker-panel rodando em ${url}`));
 }

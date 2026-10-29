@@ -49,24 +49,17 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo   # ap�
 appstreamcli validate flatpak/io.github.JulioSoaresL.ContainerPanel.metainfo.xml
 ```
 
-## Publicar no Flathub
+## Permissões
 
-1. Criar a tag do release no GitHub e adicionar `docs/screenshot.png` (referenciado no metainfo).
-2. No manifest, trocar a fonte `type: dir` por `type: git` com `url`, `tag` e `commit` do release.
-3. Fork de [flathub/flathub](https://github.com/flathub/flathub), branch `new-pr`, com o manifest,
-   `generated-sources.json`, e abrir o PR seguindo o [guia de submissão](https://docs.flathub.org/docs/for-app-authors/submission).
-4. Justificar as permissões no PR:
-   - `--filesystem=/run/docker.sock` / `xdg-run/docker.sock`: o app é um cliente da API do Docker.
-   - `--filesystem=home`: localiza arquivos compose e o compose precisa ler os projetos nos caminhos originais.
-   - `--share=network`: servidor local da interface e links para as portas dos containers.
-5. O nome exibido é "Container Panel" (o Flathub barra marcas de terceiros no nome); "Docker"
-   aparece só na descrição. O App ID segue o repo `github.com/JulioSoaresL/ContainerPanel`, como
-   o Flathub exige para `io.github.*`.
+- `--filesystem=/run/docker.sock` / `xdg-run/docker.sock`: o app é um cliente da API do Docker.
+- `--filesystem=home`: localiza arquivos compose e o compose precisa ler os projetos nos caminhos originais.
+- Sem `--share=network`: o servidor do painel e a janela ficam no loopback do próprio sandbox, e os
+  links para as portas dos containers abrem no navegador do sistema.
 
 ## Notas do build
 
-- O build é offline. O Electron 45 não baixa o binário no `npm ci`, então o manifest extrai o zip
-  que vem no `generated-sources.json` para `node_modules/electron/dist`.
+- O build é offline. O Electron não baixa o binário no `npm ci`, então o manifest extrai o zip
+  que vem no `generated-sources.json` (na versão do `package.json`) para `node_modules/electron/dist`.
 - `npmRebuild: false` no `package.json`: o electron-builder tentaria recompilar o `cpu-features`
   (dependência opcional do `ssh2`, via dockerode) baixando headers. O painel não usa SSH.
 

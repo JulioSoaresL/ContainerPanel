@@ -14,8 +14,6 @@ finish-args:
   - --socket=fallback-x11
   - --share=ipc
   - --device=dri
-  # Servidor HTTP/WebSocket do painel em 127.0.0.1 e links para as portas dos containers.
-  - --share=network
   # API do Docker (rootful e rootless).
   - --filesystem=/run/docker.sock
   - --filesystem=xdg-run/docker.sock
@@ -45,10 +43,8 @@ modules:
     build-options:
       append-path: /usr/lib/sdk/node24/bin
       env:
-        NPM_CONFIG_LOGLEVEL: info
         XDG_CACHE_HOME: /run/build/docker-panel/flatpak-node/cache
     sources:
-      # Para o Flathub, trocar por `type: git` com `tag` e `commit` do release.
       - type: dir
         path: ..
         skip: [node_modules, dist, build-dir, .flatpak-builder, .git, data]
@@ -60,10 +56,11 @@ modules:
           - exec zypak-wrapper /app/main/docker-panel "$@"
     build-commands:
       - npm ci --offline --cache=$FLATPAK_BUILDER_BUILDDIR/flatpak-node/npm-cache
-      # O Electron 45 baixa o binário sob demanda; o build é offline, então extrai o zip das fontes.
+      # O Electron baixa o binário sob demanda; o build é offline, então extrai o zip das fontes.
       - |
         case "$FLATPAK_ARCH" in x86_64) EARCH=x64 ;; aarch64) EARCH=arm64 ;; esac
-        unzip -q flatpak-node/cache/electron/electron-v45.0.0-linux-$EARCH.zip -d node_modules/electron/dist
+        EVER=$(node -p "require('./node_modules/electron/package.json').version")
+        unzip -q flatpak-node/cache/electron/electron-v$EVER-linux-$EARCH.zip -d node_modules/electron/dist
       - |
         . flatpak-node/electron-builder-arch-args.sh
         npm run build:dir -- $ELECTRON_BUILDER_ARCH_ARGS

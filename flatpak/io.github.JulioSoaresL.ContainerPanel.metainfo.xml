@@ -36,6 +36,11 @@
     <color type="primary" scheme_preference="dark">#0d1117</color>
   </branding>
   <releases>
+    <release version="1.0.1" date="2026-10-29">
+      <description>
+        <p>Security update: the panel now requires a per-session token, Electron and Express dependencies were updated, and the app no longer needs network access.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-28">
       <description>
         <p>First desktop release.</p>

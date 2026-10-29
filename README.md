@@ -32,7 +32,8 @@ da release nova e rode o `flatpak install` de novo.
 PANEL_PORT=8000 ./start.sh
 ```
 
-Acesse <http://127.0.0.1:7777>.
+O navegador abre no link com o token da sessão, que também aparece no terminal
+(`http://127.0.0.1:7777/?t=...`).
 
 ## App desktop (Electron / Flatpak)
 
@@ -46,7 +47,7 @@ npm run build:dir     # gera o app em dist/linux-unpacked/
 ```
 
 No app, os projetos ficam salvos em `~/.local/share/docker-panel/`, e não em `data/`.
-Para o pacote Flatpak e a publicação no Flathub, veja [flatpak/README.md](flatpak/README.md).
+Para gerar o pacote Flatpak, veja [flatpak/README.md](flatpak/README.md).
 
 ## Requisitos
 
@@ -65,3 +66,5 @@ Para o pacote Flatpak e a publicação no Flathub, veja [flatpak/README.md](flat
 
 O painel dá shell em qualquer container, por isso escuta **apenas em 127.0.0.1** e
 recusa requisições cujo `Host`/`Origin` não seja o próprio painel.
+Como a porta em 127.0.0.1 é visível para todos os usuários da máquina, cada sessão exige um
+token aleatório, que chega pelo link e vira um cookie `HttpOnly`.

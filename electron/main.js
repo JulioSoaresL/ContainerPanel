@@ -29,9 +29,9 @@ function isLocal(url) {
 }
 
 async function createWindow() {
-  let port;
+  let url;
   try {
-    ({ port, server } = await start({ port: 0 }));
+    ({ url, server } = await start({ port: 0 }));
   } catch (e) {
     dialog.showErrorBox('Container Panel', `Não foi possível iniciar o painel:\n${e.message}`);
     return app.quit();
@@ -51,11 +51,14 @@ async function createWindow() {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!isLocal(url)) { e.preventDefault(); shell.openExternal(url); }
+  // Só http(s) vai para fora; outros esquemas (file:, smb:, ...) são ignorados.
+  win.webContents.on('will-navigate', (e, target) => {
+    if (isLocal(target)) return;
+    e.preventDefault();
+    if (/^https?:\/\//.test(target)) shell.openExternal(target);
   });
 
-  win.loadURL(`http://127.0.0.1:${port}`);
+  win.loadURL(url);
 }
 
 app.on('second-instance', () => {
